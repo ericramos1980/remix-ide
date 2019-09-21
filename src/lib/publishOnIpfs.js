@@ -2,8 +2,11 @@
 
 const async = require('async')
 const IpfsClient = require('ipfs-mini')
-const host = 'ipfs.komputing.org'
-const ipfs = new IpfsClient({ host, port: 443, protocol: 'https' })
+
+const ipfsNodes = [
+  new IpfsClient({ host: 'ipfs.komputing.org', port: 443, protocol: 'https' }),
+  new IpfsClient({ host: 'ipfs.infura.io', port: 5001, protocol: 'https' })
+]
 
 module.exports = (contract, fileManager, cb, ipfsVerifiedPublishCallBack) => {
   // gather list of files to publish
@@ -89,7 +92,7 @@ module.exports = (contract, fileManager, cb, ipfsVerifiedPublishCallBack) => {
 
 async function ipfsVerifiedPublish (content, expectedHash, cb) {
   try {
-    const results = await ipfs.add(content)
+    const results = await tryPushes(content)
     if (results !== expectedHash) {
       cb(null, { message: 'hash mismatch between solidity bytecode and uploaded content.', url: 'dweb:/ipfs/' + results, hash: results })
     } else {
@@ -98,4 +101,28 @@ async function ipfsVerifiedPublish (content, expectedHash, cb) {
   } catch (error) {
     cb(error)
   }
+}
+
+async function tryPushes (content) {
+  return new Promise((resolve, reject) => {
+    let failedCount = 0
+    const failed = (error) => {
+      console.log(error)
+      failedCount++
+      if (failedCount >= ipfsNodes.length) {
+        reject(error)
+      }
+    }
+    let alreadyReturned = false
+    const response = (results) => {
+      console.log('pushed', results)
+      if (!alreadyReturned) {
+        alreadyReturned = true
+        resolve(results)
+      }
+    }
+    ipfsNodes.forEach((node) => {
+      node.add(content).then(response).catch(failed)
+    })
+  })
 }
